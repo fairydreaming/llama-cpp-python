@@ -725,6 +725,18 @@ class Llama:
         )
         return id
 
+    def encode(self,
+        tokens: Sequence[int],
+    ): 
+        """Encode tokens from a prompt."""
+
+        assert self._ctx.has_encoder(self.model)
+
+        self._batch.set_batch(
+            batch=tokens, n_past=0, logits_all=False
+        )
+        self._ctx.encode(self._batch)
+
     def generate(
         self,
         tokens: Sequence[int],
@@ -2082,6 +2094,14 @@ class Llama:
         """Return the pooling type."""
         return self._ctx.pooling_type()
 
+    def has_encoder(self) -> bool:
+        """Return true if the model contains encoder"""
+        return self._ctx.has_encoder(self.model)
+
+    def decoder_start_token(self) -> int:
+        """Return the decoder start token."""
+        return self._ctx.decoder_start_token(self.model)
+
     def close(self) -> None:
         """Explicitly free the model from memory."""
         if hasattr(self,'_stack'):
@@ -2160,7 +2180,7 @@ class Llama:
 
         files = [
             file["name"] if isinstance(file, dict) else file
-            for file in hffs.ls(repo_id, recursive=True))
+            for file in hffs.ls(repo_id, recursive=True)
         ]
 
         # split each file into repo_id, subfolder, filename

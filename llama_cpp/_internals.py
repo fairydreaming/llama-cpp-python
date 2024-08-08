@@ -351,6 +351,26 @@ class _LlamaContext:
 
     # TODO: llama_save_session_file
 
+    def has_encoder(self, model: _LlamaModel):
+        return llama_cpp.llama_model_has_encoder(
+            model
+        )
+
+    def decoder_start_token(self, model: _LlamaModel):
+        return llama_cpp.llama_model_decoder_start_token(
+            model
+        )
+
+    def encode(self, batch: "_LlamaBatch"):
+        assert self.ctx is not None
+        assert batch.batch is not None
+        return_code = llama_cpp.llama_encode(
+            self.ctx,
+            batch.batch,
+        )
+        if return_code != 0:
+            raise RuntimeError(f"llama_encode returned {return_code}")
+
     def decode(self, batch: "_LlamaBatch"):
         assert self.ctx is not None
         assert batch.batch is not None
