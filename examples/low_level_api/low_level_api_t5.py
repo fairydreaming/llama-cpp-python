@@ -12,16 +12,24 @@ MODEL_PATH = os.environ.get("MODEL", "/mnt/md0/models/t5-base.gguf")
 prompt = b"translate English to German: The house is wonderful."
 
 lparams = llama_cpp.llama_model_default_params()
-cparams = llama_cpp.llama_context_default_params()
 model = llama_cpp.llama_load_model_from_file(MODEL_PATH.encode("utf-8"), lparams)
-ctx = llama_cpp.llama_new_context_with_model(model, cparams)
+
+vocab = llama_cpp.llama_model_get_vocab(model)
+
+cparams = llama_cpp.llama_context_default_params()
+cparams.no_perf = False
+ctx = llama_cpp.llama_init_from_model(model, cparams)
+
+sparams = llama_cpp.llama_sampler_chain_default_params()
+smpl = llama_cpp.llama_sampler_chain_init(sparams)
+llama_cpp.llama_sampler_chain_add(smpl, llama_cpp.llama_sampler_init_greedy())
 
 n_past = 0
 
 embd_inp = (llama_cpp.llama_token * (len(prompt) + 1))()
 
 n_of_tok = llama_cpp.llama_tokenize(
-    model,
+    vocab,
     prompt,
     len(prompt),
     embd_inp,
@@ -51,12 +59,12 @@ repeat_penalty = 1
 frequency_penalty = 0.0
 presence_penalty = 0.0
 
-batch = llama_cpp.llama_batch_init(n_batch, 0, 1);
+batch = llama_cpp.llama_batch_init(n_batch, 0, 1)
 
 # prepare batch for encoding containing the prompt
 batch.n_tokens = len(embd_inp)
 for i in range(batch.n_tokens):
-    batch.token[i] = embd_inp[i];
+    batch.token[i] = embd_inp[i]
     batch.pos[i] = i
     batch.n_seq_id[i] = 1
     batch.seq_id[i][0] = 0
@@ -76,7 +84,7 @@ while remaining_tokens > 0:
 
         batch.n_tokens = len(embd)
         for i in range(batch.n_tokens):
-            batch.token[i] = embd[i];
+            batch.token[i] = embd[i]
             batch.pos[i] = n_past + i
             batch.n_seq_id[i] = 1
             batch.seq_id[i][0] = 0
@@ -90,34 +98,7 @@ while remaining_tokens > 0:
     n_past += len(embd)
     embd = []
     if len(embd_inp) <= input_consumed:
-        logits = llama_cpp.llama_get_logits(ctx)
-        n_vocab = llama_cpp.llama_n_vocab(model)
-
-        _arr = (llama_cpp.llama_token_data * n_vocab)(
-            *[
-                llama_cpp.llama_token_data(token_id, logits[token_id], 0.0)
-                for token_id in range(n_vocab)
-            ]
-        )
-        candidates_p = llama_cpp.ctypes.pointer(
-            llama_cpp.llama_token_data_array(_arr, len(_arr), False)
-        )
-
-        _arr = (llama_cpp.llama_token * len(last_n_tokens_data))(*last_n_tokens_data)
-        llama_cpp.llama_sample_repetition_penalties(
-            ctx,
-            candidates_p,
-            _arr,
-            last_n_repeat,
-            repeat_penalty,
-            frequency_penalty,
-            presence_penalty,
-        )
-
-        llama_cpp.llama_sample_top_k(ctx, candidates_p, 40, 1)
-        llama_cpp.llama_sample_top_p(ctx, candidates_p, 0.8, 1)
-        llama_cpp.llama_sample_temp(ctx, candidates_p, 0.2)
-        id = llama_cpp.llama_sample_token(ctx, candidates_p)
+        id = llama_cpp.llama_sampler_sample(smpl, ctx, -1)
 
         last_n_tokens_data = last_n_tokens_data[1:] + [id]
         embd.append(id)
@@ -135,7 +116,7 @@ while remaining_tokens > 0:
             size = 32
             buffer = (ctypes.c_char * size)()
             n = llama_cpp.llama_token_to_piece(
-                model, llama_cpp.llama_token(id), buffer, size, 0, True
+                vocab, llama_cpp.llama_token(id), buffer, size, 0, True
             )
             assert n <= size
             print(
@@ -144,13 +125,15 @@ while remaining_tokens > 0:
                 flush=True,
             )
 
-    if len(embd) > 0 and embd[-1] in [llama_cpp.llama_token_eos(model), llama_cpp.llama_token_eot(model)]:
+    if len(embd) > 0 and embd[-1] in [llama_cpp.llama_token_eos(vocab), llama_cpp.llama_token_eot(vocab)]:
         break
 
 print()
 
-llama_cpp.llama_print_timings(ctx)
+llama_cpp.llama_perf_context_print(ctx)
 
-llama_cpp.llama_batch_free(batch);
+llama_cpp.llama_batch_free(batch)
 
 llama_cpp.llama_free(ctx)
+
+llama_cpp.llama_model_free(model)
